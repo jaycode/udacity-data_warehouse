@@ -22,12 +22,33 @@ List of tables
 - artists: Artists in the app's music database.
 - time: Timestamps of records in songplays.
 
+## How to run the scripts: 
+
+```
+$ python create_tables.py
+```
+
+followed with 
+
+```
+python etl.py
+```
+
+## Explanation of the files in the repository:
+
+1. `check_files.py`: I created this script to check if the files in Udacity's S3 instance existed. To run this code, `ACCESS_KEY` and `ACCESS_SECRET` need to also be set in the config file `dwh.cfg`.
+2. `create_tables`: Send commands to Redshift cluster to run table creation queries.
+3. `dwh.default.cfg`: Configurations for running all the script files. Rename to `dwh.cfg` before running the scripts.
+4. `etl.py`: Send commands to Redshift cluster to copy data from S3 files to staging tables, followed by inserting data from staging to analytical tables.
+5. `README.md`: This document.
+6. `sql_queries.py`: All queries used throughout this project.
+
 ## ETL Pipeline
 
-1. Delete if exists and create all tables listed in the "Schema Design" section above.
+1. Delete if exists and create all tables listed in the "Schema Design" section above. This is done in `create_tables.py`. The other points below are done in the `etl.py` script.
 2. Copy all data from `s3://udacity-dend/song_data` and `s3://udacity-dend/log_data` to staging tables `staging_songs` and `staging_events`, respectively. These staging tables have the exact same structure with the raw json files.
 3. Run SQL queries to select data from staging tables and then directly insert them to the other 5 tables (i.e. our OLAP/analytical tables). When running the insert code, handle duplicate records by not inserting values when duplicates are found (code like `WHERE user_id NOT IN (SELECT DISTINCT user_id FROM users)` deals with this problem). 
 
 ## Additional
 
-I also created a `check_files.py` script to check if the files in Udacity's S3 instance existed. To run this code, `ACCESS_KEY` and `ACCESS_SECRET` need to also be set in the config file `dwh.cfg`.
+I also created a `check_files.py` script

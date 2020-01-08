@@ -59,9 +59,9 @@ songplay_table_create = ("""
         start_time bigint not null,
         user_id int not null,
         level varchar,
-        song_id varchar,
-        artist_id varchar,
-        session_id int not null,
+        song_id varchar not null,
+        artist_id varchar not null,
+        session_id int,
         location varchar,
         user_agent text,
         PRIMARY KEY (songplay_id));

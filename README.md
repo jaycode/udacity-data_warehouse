@@ -22,13 +22,13 @@ List of tables
 - artists: Artists in the app's music database.
 - time: Timestamps of records in songplays.
 
-## How to run the scripts: 
+## How to run the scripts:
 
 ```
 $ python create_tables.py
 ```
 
-followed with 
+followed with
 
 ```
 python etl.py
@@ -47,8 +47,58 @@ python etl.py
 
 1. Delete if exists and create all tables listed in the "Schema Design" section above. This is done in `create_tables.py`. The other points below are done in the `etl.py` script.
 2. Copy all data from `s3://udacity-dend/song_data` and `s3://udacity-dend/log_data` to staging tables `staging_songs` and `staging_events`, respectively. These staging tables have the exact same structure with the raw json files.
-3. Run SQL queries to select data from staging tables and then directly insert them to the other 5 tables (i.e. our OLAP/analytical tables). When running the insert code, handle duplicate records by not inserting values when duplicates are found (code like `WHERE user_id NOT IN (SELECT DISTINCT user_id FROM users)` deals with this problem). 
+3. Run SQL queries to select data from staging tables and then directly insert them to the other 5 tables (i.e. our OLAP/analytical tables). When running the insert code, handle duplicate records by not inserting values when duplicates are found.
 
 ## Additional
 
 I also created a `check_files.py` script
+
+
+## Note on duplicate users table
+
+Using SELECT DISTINCT does not work:
+
+```
+user_table_insert = ("""
+    INSERT INTO users (user_id, first_name, last_name, gender, level)
+    SELECT DISTINCT userId,
+            firstName,
+            lastName,
+            gender,
+            level
+    FROM FROM staging_events
+    WHERE page = 'NextSong'
+    AND userId NOT IN (SELECT DISTINCT user_id FROM users)
+""")
+```
+
+This query would result in duplicate users in the users table.
+
+I used the following query to test duplicates. When correct. All rows should have the count of 1:
+
+![distinct](distinct.png)
+
+*Note: I only entered the staging data from the path `s3://udacity-dend/song-data/A/A/A` so there are only a couple of duplicate rows, but the existence of rows with count of 2 is enough to prove my point.*
+
+Instead, I used a CTE and rank to make sure there is no duplicate in the users table:
+
+```
+user_table_insert = """
+    INSERT INTO users(user_id, first_name, last_name, gender, level)
+    WITH uniq_staging_events AS (
+    	SELECT userId, firstName, lastName, gender, level,
+    		   ROW_NUMBER() OVER(PARTITION BY userid ORDER BY ts DESC) AS rank
+    	FROM staging_events
+                WHERE userId IS NOT NULL AND page = 'NextSong'
+    )
+    SELECT userId, firstName, lastName, gender, level
+    	FROM uniq_staging_events
+    WHERE rank = 1
+"""
+```
+
+and Voila! The result is as expected:
+
+![rank](rank.png)
+
+The method shown in [this post in the Knowledge Hub](https://knowledge.udacity.com/questions/42129) also works.

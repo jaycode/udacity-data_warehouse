@@ -34,9 +34,9 @@ staging_events_table_create= ("""
         sessionId varchar,
         song varchar,
         status varchar,
-        ts bigint,
+        ts timestamp,
         userAgent text,
-        userId int);
+        userId varchar);
 """)
 
 staging_songs_table_create = ("""
@@ -56,12 +56,12 @@ staging_songs_table_create = ("""
 songplay_table_create = ("""
     CREATE TABLE IF NOT EXISTS songplays (
         songplay_id int identity(1,1),
-        start_time bigint not null,
-        user_id int not null,
+        start_time timestamp not null,
+        user_id varchar not null,
         level varchar,
         song_id varchar not null,
         artist_id varchar not null,
-        session_id int,
+        session_id varchar,
         location varchar,
         user_agent text,
         PRIMARY KEY (songplay_id));
@@ -69,7 +69,7 @@ songplay_table_create = ("""
 
 user_table_create = ("""
     CREATE TABLE users(
-        user_id int,
+        user_id varchar,
         first_name varchar,
         last_name varchar,
         gender varchar,
@@ -99,7 +99,7 @@ artist_table_create = ("""
 
 time_table_create = ("""
     CREATE TABLE time(
-        start_time bigint,
+        start_time timestamp,
         hour int,
         day int,
         week int,
@@ -116,7 +116,7 @@ staging_events_copy = ("""
     FROM {}
     iam_role '{}'
     region 'us-west-2'
-    COMPUPDATE OFF
+    TIMEFORMAT AS 'epochmillisecs'
     JSON {};
 """).format(config["S3"]["LOG_DATA"], config["IAM_ROLE"]["ARN"], config["S3"]["LOG_JSONPATH"])
 
@@ -125,7 +125,6 @@ staging_songs_copy = ("""
     FROM {}
     iam_role '{}'
     REGION 'us-west-2'
-    COMPUPDATE OFF
     JSON 'auto';
 """).format(config["S3"]["SONG_DATA"], config["IAM_ROLE"]["ARN"])
 
@@ -154,62 +153,90 @@ songplay_table_insert = ("""
             AND se.artist = ss.artist_name
             AND se.length = ss.duration
     WHERE se.page = 'NextSong'
-        AND se.session_id NOT IN (
-            SELECT DISTINCT s.session_id FROM songplays s WHERE s.user_id = se.user_id
-                AND s.start_time = se.start_time AND s.session_id = se.session_id )
+        AND se.sessionId NOT IN (
+            SELECT DISTINCT s.session_id FROM songplays s WHERE s.user_id = se.userId
+                AND s.start_time = se.ts AND s.session_id = se.sessionId )
+        AND ss.song_id IS NOT NULL
+        AND ss.artist_id IS NOT NULL
+        AND se.userId IS NOT NULL
 """)
 
-user_table_insert = ("""
-    INSERT INTO users (user_id, first_name, last_name, gender, level)
-    SELECT DISTINCT userId,
-                    firstName,
-                    lastName,
-                    gender,
-                    level
-    FROM staging_events
-    WHERE page = 'NextSong'
-    WHERE user_id NOT IN (SELECT DISTINCT user_id FROM users)
-""")
+# # The code below returns duplicate users
+# user_table_insert = ("""
+#     INSERT INTO users (user_id, first_name, last_name, gender, level)
+#     SELECT DISTINCT userId,
+#             firstName,
+#             lastName,
+#             gender,
+#             level
+#     FROM FROM staging_events
+#     WHERE page = 'NextSong'
+#     AND userId NOT IN (SELECT DISTINCT user_id FROM users)
+# """)
+
+# # This works. Suggested in https://knowledge.udacity.com/questions/42129
+# user_table_insert = """
+# INSERT INTO users (user_id, first_name, last_name, gender, level)
+# SELECT userId AS user_id,
+#     firstname AS first_name,
+#     lastName AS last_name,
+#     gender,
+#     level
+# FROM staging_events m
+# WHERE userId IS NOT null AND ts = (select max(ts) FROM staging_events s WHERE s.userId = m.userId)
+# ORDER BY userId DESC
+# """
+
+# This also works
+user_table_insert = """
+    INSERT INTO users(user_id, first_name, last_name, gender, level)
+    WITH uniq_staging_events AS (
+    	SELECT userId, firstName, lastName, gender, level,
+    		   ROW_NUMBER() OVER(PARTITION BY userid ORDER BY ts DESC) AS rank
+    	FROM staging_events
+                WHERE userId IS NOT NULL AND page = 'NextSong'
+    )
+    SELECT userId, firstName, lastName, gender, level
+    	FROM uniq_staging_events
+    WHERE rank = 1
+"""
 
 song_table_insert = ("""
-    INSERT INTO songs (song_id, title, artist_id, year, duration) 
-    SELECT DISTINCT 
-        song_id, 
-        title,
-        artist_id,
-        year,
-        duration
+    INSERT INTO songs (song_id, title, artist_id, year, duration)
+    SELECT song_id,
+           title,
+           artist_id,
+           year,
+           duration
     FROM staging_songs
-    WHERE song_id NOT IN (SELECT DISTINCT song_id FROM songs)
 """)
 
 artist_table_insert = ("""
-    INSERT INTO artists (artist_id, name, location, latitude, longitude) 
-    SELECT DISTINCT 
-        artist_id,
-        artist_name,
-        artist_location,
-        artist_latitude,
-        artist_longitude
+    INSERT INTO artists (artist_id, name, location, latitude, longitude)
+    SELECT artist_id,
+           artist_name,
+           artist_location,
+           artist_latitude,
+           artist_longitude
     FROM staging_songs
-    WHERE artist_id NOT IN (SELECT DISTINCT artist_id FROM artists)
 """)
 
 time_table_insert = ("""
     INSERT INTO time (start_time, hour, day, week, month, year, weekday)
-    SELECT 
-        start_time, 
-        EXTRACT(hr from start_time) AS hour,
-        EXTRACT(d from start_time) AS day,
-        EXTRACT(w from start_time) AS week,
-        EXTRACT(mon from start_time) AS month,
-        EXTRACT(yr from start_time) AS year, 
-        EXTRACT(weekday from start_time) AS weekday 
+    SELECT
+        ts,
+        EXTRACT(hr from ts) AS hour,
+        EXTRACT(d from ts) AS day,
+        EXTRACT(w from ts) AS week,
+        EXTRACT(mon from ts) AS month,
+        EXTRACT(yr from ts) AS year,
+        EXTRACT(weekday from ts) AS weekday
     FROM (
-        SELECT DISTINCT start_time 
+        SELECT DISTINCT ts
         FROM staging_events
     )
-    WHERE start_time NOT IN (SELECT DISTINCT start_time FROM time)
+    WHERE ts NOT IN (SELECT DISTINCT start_time FROM time)
+        AND ts IS NOT NULL
 """)
 
 # QUERY LISTS

@@ -30,13 +30,13 @@ staging_events_table_create= ("""
         location varchar,
         method varchar,
         page varchar,
-        registration varchar,
-        sessionId varchar,
+        registration bigint,
+        sessionId int,
         song varchar,
-        status varchar,
+        status int,
         ts timestamp,
         userAgent text,
-        userId varchar);
+        userId int);
 """)
 
 staging_songs_table_create = ("""
@@ -70,7 +70,7 @@ songplay_table_create = ("""
 user_table_create = ("""
     CREATE TABLE users(
         user_id varchar,
-        first_name varchar,
+        first_name varchar NOT NULL,
         last_name varchar,
         gender varchar,
         level varchar,
@@ -203,7 +203,7 @@ user_table_insert = """
 
 song_table_insert = ("""
     INSERT INTO songs (song_id, title, artist_id, year, duration)
-    SELECT song_id,
+    SELECT DISTINCT song_id,
            title,
            artist_id,
            year,
@@ -213,7 +213,7 @@ song_table_insert = ("""
 
 artist_table_insert = ("""
     INSERT INTO artists (artist_id, name, location, latitude, longitude)
-    SELECT artist_id,
+    SELECT DISTINCT artist_id,
            artist_name,
            artist_location,
            artist_latitude,
@@ -223,7 +223,7 @@ artist_table_insert = ("""
 
 time_table_insert = ("""
     INSERT INTO time (start_time, hour, day, week, month, year, weekday)
-    SELECT
+    SELECT DISTINCT
         ts,
         EXTRACT(hr from ts) AS hour,
         EXTRACT(d from ts) AS day,
